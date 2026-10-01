@@ -6,6 +6,7 @@ import FullscreenOverlayUntyped from '../../components/FullscreenOverlay';
 import Viewer3DUntyped from '../../components/viewer3d';
 import CameraFeed from './camera/CameraFeed';
 import { ViewportSwapper } from './layout';
+import { NfcControl } from './nfc';
 import LogConsoleUntyped from '@components/LogConsole';
 import { RightPanel } from './right-panel';
 import RobotHeader from './RobotHeader';
@@ -566,6 +567,7 @@ function ActiveRobotView({
                   />
                 }
                 viewCamera={<CameraFeed width={640} height={480} isLarge={true} />}
+                smallViewportAccessory={<NfcControl />}
               />
 
               {/* Power Button - top left corner (sleep + disable motors + kill daemon) */}

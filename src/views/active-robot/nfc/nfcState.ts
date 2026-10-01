@@ -1,0 +1,91 @@
+/**
+ * NFC reader types and the pure logic around them, kept free of imports so
+ * tests can load it without the app (and its browser-only modules).
+ */
+
+/** Mirrors the daemon's `NfcStatus` (`GET /api/nfc/status`). */
+export interface NfcStatus {
+  connected: boolean;
+  chip_detected: boolean;
+  driver_available: boolean;
+  port?: string | null;
+  chip_version?: string | null;
+  error?: string | null;
+  last_seen_at?: string | null;
+}
+
+/** One NDEF record. `kind` is "text", "uri" or "other". */
+export interface NfcRecord {
+  kind: 'text' | 'uri' | 'other' | string;
+  value?: string | null;
+  type_name?: string | null;
+  data_hex?: string | null;
+}
+
+/** Mirrors the daemon's `NfcTag` (`GET /api/nfc/tag`). */
+export interface NfcTag {
+  present: boolean;
+  uid?: string | null;
+  model?: string | null;
+  records?: NfcRecord[];
+  content?: string | null;
+  blank?: boolean;
+  readable?: boolean;
+  writable?: boolean;
+  capacity?: number | null;
+  raw_hex?: string | null;
+  error?: string | null;
+  last_read_at?: string | null;
+}
+
+export interface NfcEraseResult {
+  success: boolean;
+  error?: string | null;
+}
+
+/** What the reader is doing, as the status button shows it. */
+export type NfcState = 'unavailable' | 'idle' | 'tag';
+
+/** Stable error codes returned by the daemon's erase endpoint. */
+const ERASE_ERROR_MESSAGES: Record<string, string> = {
+  NO_TAG: 'No tag on the reader',
+  LOCKED: 'Tag is locked and can no longer be written',
+  UNKNOWN_TAG: 'Unrecognised tag model',
+  WRITE_REFUSED: 'Tag refused the write',
+  WRITE_ERROR: 'Erase failed partway through',
+  COLLISION: 'Several tags on the reader, present only one',
+  NOT_CONNECTED: 'NFC reader not connected',
+  LINK_LOST: 'Lost the link to the NFC reader',
+  TIMEOUT: 'Tag was not presented in time',
+  DRIVER_MISSING: 'NFC driver not installed on the robot',
+};
+
+/**
+ * Turn an erase error code into a line for the user. Unknown codes are shown
+ * as-is: a code we have never seen is more useful than a generic message.
+ */
+export function describeEraseError(code: string | null | undefined): string {
+  if (!code) return 'Unknown error';
+  return ERASE_ERROR_MESSAGES[code] ?? code;
+}
+
+/**
+ * Collapse the daemon's status and tag into the three states the button shows.
+ *
+ * Anything short of a connected reader is "unavailable": no answer from the
+ * daemon, an older daemon without the NFC routes, the driver missing, or the
+ * board unplugged all look the same from the button.
+ */
+export function deriveNfcState(status: NfcStatus | null, tag: NfcTag | null): NfcState {
+  if (!status?.connected) return 'unavailable';
+  return tag?.present ? 'tag' : 'idle';
+}
+
+/**
+ * True when the tag holds a payload that is not NDEF (a bare code written
+ * straight into memory), which only a full erase removes.
+ */
+export function needsFullErase(tag: NfcTag | null): boolean {
+  if (!tag?.present) return false;
+  return Boolean(tag.raw_hex) && (tag.records?.length ?? 0) === 0;
+}
