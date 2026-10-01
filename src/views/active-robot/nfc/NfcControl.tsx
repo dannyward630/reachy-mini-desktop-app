@@ -1,19 +1,14 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback } from 'react';
+import useAppStore from '../../../store/useAppStore';
 import NfcStatusButton from './NfcStatusButton';
-import NfcOverlay from './NfcOverlay';
 import { useNfcReader } from './useNfcReader';
 
-/** NFC status button and the page it opens, sharing one poll of the reader. */
+/** NFC status button; opens Settings on the NFC Reader card. */
 export default function NfcControl(): React.ReactElement {
-  const reader = useNfcReader();
-  const [open, setOpen] = useState<boolean>(false);
-  const openOverlay = useCallback(() => setOpen(true), []);
-  const closeOverlay = useCallback(() => setOpen(false), []);
+  // Settings covers the button and polls the reader itself while open.
+  const settingsOpen = useAppStore(state => state.showSettings);
+  const reader = useNfcReader({ enabled: !settingsOpen });
+  const openNfcSettings = useCallback(() => useAppStore.getState().openSettings('nfc'), []);
 
-  return (
-    <>
-      <NfcStatusButton state={reader.state} onClick={openOverlay} />
-      <NfcOverlay open={open} onClose={closeOverlay} reader={reader} />
-    </>
-  );
+  return <NfcStatusButton state={reader.state} onClick={openNfcSettings} />;
 }

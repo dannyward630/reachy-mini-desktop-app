@@ -180,9 +180,11 @@ export default function RobotViewer3D({
 
   const showSpinner = shouldWaitForPose && (!isPoseReady || !spinnerGraceElapsed);
 
-  const [showSettingsOverlay, setShowSettingsOverlay] = useState<boolean>(false);
-  const openSettings = useCallback(() => setShowSettingsOverlay(true), []);
-  const closeSettings = useCallback(() => setShowSettingsOverlay(false), []);
+  // Settings open state lives in the store so other controls (the NFC button)
+  // can open it on a given card.
+  const showSettingsOverlay = useAppStore(state => state.showSettings);
+  const openSettings = useCallback(() => useAppStore.getState().openSettings(), []);
+  const closeSettings = useCallback(() => useAppStore.getState().closeSettings(), []);
 
   return (
     <Box
@@ -292,7 +294,7 @@ export default function RobotViewer3D({
       )}
 
       <SettingsOverlay
-        open={showSettingsOverlay}
+        open={showSettingsOverlay && !hideControls}
         onClose={closeSettings}
         darkMode={palette.isDark}
       />

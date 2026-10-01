@@ -190,6 +190,9 @@ export interface ToastState {
   severity: ToastSeverity;
 }
 
+/** A Settings card the overlay can scroll to and highlight when it opens. */
+export type SettingsSection = 'nfc';
+
 export interface UiSliceState {
   darkMode: boolean;
   openWindows: string[];
@@ -199,6 +202,9 @@ export interface UiSliceState {
   showFirstTimeWifiSetup: boolean;
   showBluetoothSupportView: boolean;
   showSetupChoice: boolean;
+  showSettings: boolean;
+  /** Card to bring into view when Settings opens; cleared once shown. */
+  settingsFocus: SettingsSection | null;
   bleStatus: BleStatus;
   bleDevices: unknown[];
   bleDeviceAddress: string | null;
@@ -222,6 +228,10 @@ export interface UiSliceActions {
   setShowFirstTimeWifiSetup: (value: boolean) => void;
   setShowBluetoothSupportView: (value: boolean) => void;
   setShowSetupChoice: (value: boolean) => void;
+
+  openSettings: (focus?: SettingsSection) => void;
+  closeSettings: () => void;
+  clearSettingsFocus: () => void;
 
   setBleStatus: (value: BleStatus) => void;
   setBleDevices: (value: unknown[]) => void;

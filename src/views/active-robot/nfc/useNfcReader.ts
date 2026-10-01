@@ -27,8 +27,11 @@ export interface UseNfcReaderResult {
  *
  * The tag is only asked for when the reader is connected: the daemon answers
  * "no tag" otherwise, so the request would tell us nothing.
+ *
+ * `enabled: false` pauses the poll, so two readers on screen at once (the
+ * status button behind Settings, and the Settings card) do not both ask.
  */
-export function useNfcReader(): UseNfcReaderResult {
+export function useNfcReader({ enabled = true }: { enabled?: boolean } = {}): UseNfcReaderResult {
   const [status, setStatus] = useState<NfcStatus | null>(null);
   const [tag, setTag] = useState<NfcTag | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -45,7 +48,7 @@ export function useNfcReader(): UseNfcReaderResult {
   }, []);
 
   useEffect(() => {
-    if (!isVisible) return;
+    if (!isVisible || !enabled) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -91,7 +94,7 @@ export function useNfcReader(): UseNfcReaderResult {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [isVisible]);
+  }, [isVisible, enabled]);
 
   const erase = useCallback(async (full: boolean): Promise<void> => {
     setIsErasing(true);
