@@ -12,9 +12,11 @@ import {
 } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
 import NfcIcon from '@mui/icons-material/Nfc';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import SectionHeader from '../../../components/viewer3d/settings/SectionHeader';
 import { STATUS } from '@styles/tokens';
 import { useAppPalette, TYPO, FONT_WEIGHT, RADIUS } from '@styles';
+import { openUrl } from '../../../utils/tauriCompat';
 import { NFC_STATE_COLOR } from './NfcStatusButton';
 import {
   describeTagError,
@@ -26,6 +28,9 @@ import {
   type NfcTagResult,
   type NfcWriteContent,
 } from './nfcState';
+
+/** Same page as the conversation app's "Get the NFC add-on". */
+const ADD_ON_STORE_URL = 'https://store.pollen-robotics.com/collections/reachy-mini';
 
 /** The daemon refuses more than this; the tag's own capacity is smaller still. */
 const MAX_WRITE_CHARS = 860;
@@ -51,21 +56,19 @@ export interface NfcReaderCardProps {
   cardStyle?: SxProps<Theme>;
 }
 
+// A reader the daemon cannot find gets its own card (see `absent`), so these
+// only cover the daemon not answering, the switch off, and a live reader.
 function readerTitle(status: NfcStatus | null): string {
   if (!status) return 'Unknown';
   if (status.enabled === false) return 'Reader switched off';
-  if (status.connected) return 'Reader connected';
-  if (!status.driver_available) return 'Driver not installed';
-  return 'Reader not detected';
+  return 'Reader connected';
 }
 
 /** Null when the title says it all. */
 function readerDetail(status: NfcStatus | null, fetchError: string | null): string | null {
   if (!status) return fetchError ?? 'Waiting for the daemon…';
   if (status.enabled === false) return 'Turn it on to read tags';
-  if (status.connected) return null;
-  if (!status.driver_available) return 'Install reachy_mini[nfc] on the robot';
-  return status.error ?? 'Plug in the NFC reader board';
+  return null;
 }
 
 function recordValue(record: NfcRecord): string {
@@ -143,6 +146,57 @@ export default function NfcReaderCard({
   const detail = readerDetail(status, fetchError);
 
   const monoSx = { fontFamily: 'monospace', fontSize: TYPO.xs, color: textSecondary } as const;
+
+  // The daemon answers but finds no board: most robots have no add-on, so
+  // present it rather than a reader with nothing to do. A reader switched off
+  // keeps the full card, since its switch is the way back on.
+  const absent = status !== null && !status.connected && status.enabled !== false;
+
+  if (absent) {
+    return (
+      <Box sx={{ ...cardStyle, display: 'flex', flexDirection: 'column' }}>
+        <SectionHeader title="NFC Reader" icon={NfcIcon} darkMode={palette.isDark} />
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 1.5,
+            textAlign: 'center',
+          }}
+        >
+          <Typography
+            sx={{ fontSize: TYPO.md, fontWeight: FONT_WEIGHT.semibold, color: textPrimary }}
+          >
+            No NFC reader detected
+          </Typography>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Typography sx={{ fontSize: TYPO.sm, color: textSecondary, lineHeight: 1.5 }}>
+              Pop a hat on Reachy Mini and watch its personality change! The Conversation app reads
+              the hat's NFC tag and takes on its character.
+            </Typography>
+            <Typography sx={{ fontSize: TYPO.sm, color: textSecondary, lineHeight: 1.5 }}>
+              Got an idea? Tag any object and make it trigger your own behaviors in your apps.
+            </Typography>
+          </Box>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => void openUrl(ADD_ON_STORE_URL)}
+            endIcon={<OpenInNewIcon sx={{ fontSize: TYPO.md }} />}
+            sx={{ textTransform: 'none' }}
+          >
+            Get the NFC add-on
+          </Button>
+          {!status.driver_available && (
+            <Typography sx={{ fontSize: TYPO.tiny, color: textMuted }}>
+              Already fitted? Install reachy_mini[nfc] on the robot.
+            </Typography>
+          )}
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box sx={{ ...cardStyle, display: 'flex', flexDirection: 'column' }}>
