@@ -1,5 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Box, Button, CircularProgress, Typography } from '@mui/material';
+import {
+  Box,
+  Button,
+  CircularProgress,
+  Switch,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
+} from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
 import NfcIcon from '@mui/icons-material/Nfc';
 import SectionHeader from '../../../components/viewer3d/settings/SectionHeader';
@@ -7,14 +17,20 @@ import { STATUS } from '@styles/tokens';
 import { useAppPalette, TYPO, FONT_WEIGHT, RADIUS } from '@styles';
 import { NFC_STATE_COLOR } from './NfcStatusButton';
 import {
-  describeEraseError,
+  describeTagError,
   needsFullErase,
-  type NfcEraseResult,
   type NfcRecord,
   type NfcState,
   type NfcStatus,
   type NfcTag,
+  type NfcTagResult,
+  type NfcWriteContent,
 } from './nfcState';
+
+/** The daemon refuses more than this; the tag's own capacity is smaller still. */
+const MAX_WRITE_CHARS = 860;
+
+type WriteKind = 'text' | 'uri';
 
 export interface NfcReaderCardProps {
   status: NfcStatus | null;
@@ -22,32 +38,45 @@ export interface NfcReaderCardProps {
   state: NfcState;
   fetchError: string | null;
   isErasing: boolean;
-  eraseResult: NfcEraseResult | null;
+  eraseResult: NfcTagResult | null;
   onErase: (full: boolean) => void;
-  onClearEraseResult: () => void;
+  isWriting: boolean;
+  writeResult: NfcTagResult | null;
+  onWrite: (content: NfcWriteContent) => void;
+  onClearResults: () => void;
+  canToggle: boolean;
+  isToggling: boolean;
+  toggleError: string | null;
+  onToggle: (enabled: boolean) => void;
   cardStyle?: SxProps<Theme>;
 }
 
 function readerTitle(status: NfcStatus | null): string {
   if (!status) return 'Unknown';
+  if (status.enabled === false) return 'Reader switched off';
   if (status.connected) return 'Reader connected';
   if (!status.driver_available) return 'Driver not installed';
   return 'Reader not detected';
 }
 
-function readerDetail(status: NfcStatus | null, fetchError: string | null): string {
+/** Null when the title says it all. */
+function readerDetail(status: NfcStatus | null, fetchError: string | null): string | null {
   if (!status) return fetchError ?? 'Waiting for the daemon…';
-  if (status.connected) {
-    return [status.chip_version && `CLRC663 ${status.chip_version}`, status.port]
-      .filter(Boolean)
-      .join(' · ');
-  }
+  if (status.enabled === false) return 'Turn it on to read tags';
+  if (status.connected) return null;
   if (!status.driver_available) return 'Install reachy_mini[nfc] on the robot';
   return status.error ?? 'Plug in the NFC reader board';
 }
 
 function recordValue(record: NfcRecord): string {
   return record.value ?? [record.type_name, record.data_hex].filter(Boolean).join(' ');
+}
+
+/** What the editor opens on: the tag's first text or URI record, if any. */
+function editableContent(records: NfcRecord[]): { kind: WriteKind; value: string } {
+  const record = records.find(r => (r.kind === 'text' || r.kind === 'uri') && r.value);
+  if (!record) return { kind: 'text', value: '' };
+  return { kind: record.kind as WriteKind, value: record.value ?? '' };
 }
 
 export default function NfcReaderCard({
@@ -58,23 +87,50 @@ export default function NfcReaderCard({
   isErasing,
   eraseResult,
   onErase,
-  onClearEraseResult,
+  isWriting,
+  writeResult,
+  onWrite,
+  onClearResults,
+  canToggle,
+  isToggling,
+  toggleError,
+  onToggle,
   cardStyle,
 }: NfcReaderCardProps): React.ReactElement {
   const palette = useAppPalette();
   const { textPrimary, textSecondary, textMuted } = palette;
   const [confirming, setConfirming] = useState<boolean>(false);
+  const [editing, setEditing] = useState<boolean>(false);
+  const [writeKind, setWriteKind] = useState<WriteKind>('text');
+  const [draft, setDraft] = useState<string>('');
 
   const tagUid = tag?.present ? tag.uid : null;
   const records = tag?.records ?? [];
   const fullErase = needsFullErase(tag);
+  const busy = isErasing || isWriting;
+  const result = writeResult ?? eraseResult;
 
-  // A result or a pending confirmation belongs to the tag it was about.
+  // A result, a pending confirmation or an open editor belongs to the tag it
+  // was about.
   useEffect(() => {
     setConfirming(false);
-    if (!isErasing) onClearEraseResult();
+    setEditing(false);
+    if (!busy) onClearResults();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tagUid]);
+
+  const startEditing = (): void => {
+    const { kind, value } = editableContent(records);
+    setWriteKind(kind);
+    setDraft(value);
+    onClearResults();
+    setEditing(true);
+  };
+
+  const submitWrite = (): void => {
+    setEditing(false);
+    onWrite(writeKind === 'uri' ? { uri: draft.trim() } : { text: draft });
+  };
 
   const labelSx = {
     fontSize: TYPO.tiny,
@@ -84,11 +140,35 @@ export default function NfcReaderCard({
     letterSpacing: '0.5px',
   } as const;
 
+  const detail = readerDetail(status, fetchError);
+
   const monoSx = { fontFamily: 'monospace', fontSize: TYPO.xs, color: textSecondary } as const;
 
   return (
     <Box sx={{ ...cardStyle, display: 'flex', flexDirection: 'column' }}>
-      <SectionHeader title="NFC Reader" icon={NfcIcon} darkMode={palette.isDark} />
+      <SectionHeader
+        title="NFC Reader"
+        icon={NfcIcon}
+        darkMode={palette.isDark}
+        action={
+          <Tooltip
+            title={canToggle ? '' : 'This daemon version cannot switch the reader off'}
+            placement="left"
+          >
+            {/* A disabled Switch fires no events: the span carries the tooltip. */}
+            <span>
+              <Switch
+                checked={state !== 'disabled'}
+                onChange={e => onToggle(e.target.checked)}
+                disabled={!canToggle || isToggling || isErasing}
+                size="small"
+                color="primary"
+                inputProps={{ 'aria-label': 'NFC reader on' }}
+              />
+            </span>
+          </Tooltip>
+        }
+      />
 
       {/* Reader module */}
       <Box sx={{ textAlign: 'center', mb: 2 }}>
@@ -97,11 +177,12 @@ export default function NfcReaderCard({
         >
           {readerTitle(status)}
         </Typography>
-        <Typography
-          sx={{ fontSize: TYPO.sm, color: status?.connected ? STATUS.success : textMuted }}
-        >
-          {readerDetail(status, fetchError) || 'Ready'}
-        </Typography>
+        {detail && <Typography sx={{ fontSize: TYPO.sm, color: textMuted }}>{detail}</Typography>}
+        {toggleError && (
+          <Typography sx={{ fontSize: TYPO.xs, color: STATUS.error, mt: 0.5 }}>
+            {toggleError}
+          </Typography>
+        )}
       </Box>
 
       {/* Tag */}
@@ -122,11 +203,16 @@ export default function NfcReaderCard({
             sx={{
               width: 8,
               height: 8,
+              flexShrink: 0,
               borderRadius: '50%',
               bgcolor: NFC_STATE_COLOR[state],
             }}
           />
-          <Typography sx={labelSx}>Tag</Typography>
+          {/* lineHeight 1: the caps then sit in the middle of the line box,
+              level with the dot. */}
+          <Typography sx={{ ...labelSx, lineHeight: 1 }}>
+            {tag?.present ? 'Tag' : 'No tag'}
+          </Typography>
           {tag?.present && tag.model && (
             <Typography sx={{ fontSize: TYPO.xs, color: textSecondary, ml: 'auto' }}>
               {tag.model}
@@ -138,7 +224,11 @@ export default function NfcReaderCard({
         {!tag?.present ? (
           <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Typography sx={{ fontSize: TYPO.sm, color: textMuted, textAlign: 'center' }}>
-              {state === 'unavailable' ? 'No reader to read from' : 'Place a tag on the reader'}
+              {state === 'disabled'
+                ? 'Reader is off'
+                : state === 'unavailable'
+                  ? 'No reader to read from'
+                  : 'Place a tag on the reader'}
             </Typography>
           </Box>
         ) : (
@@ -196,9 +286,76 @@ export default function NfcReaderCard({
         )}
       </Box>
 
-      {/* Erase */}
+      {/* Actions */}
       <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-        {confirming ? (
+        {editing ? (
+          <Box sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 1 }}>
+            <Typography component="label" htmlFor="nfc-tag-content" sx={labelSx}>
+              Tag content
+            </Typography>
+            {/* Top-aligned: a multiline field grows downwards, the toggle stays
+                level with its first line. */}
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+              <ToggleButtonGroup
+                exclusive
+                size="small"
+                value={writeKind}
+                onChange={(_, kind: WriteKind | null) => kind && setWriteKind(kind)}
+                sx={{
+                  flexShrink: 0,
+                  // Same height as a small TextField.
+                  height: 40,
+                  '& .MuiToggleButton-root': { textTransform: 'none', px: 1.25 },
+                }}
+              >
+                <ToggleButton value="text">Text</ToggleButton>
+                <ToggleButton value="uri">Link</ToggleButton>
+              </ToggleButtonGroup>
+              <TextField
+                id="nfc-tag-content"
+                autoFocus
+                fullWidth
+                size="small"
+                multiline={writeKind === 'text'}
+                maxRows={4}
+                placeholder={writeKind === 'uri' ? 'https://…' : 'Content to write'}
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Escape') setEditing(false);
+                  if (e.key === 'Enter' && !e.shiftKey && draft.trim()) {
+                    e.preventDefault();
+                    submitWrite();
+                  }
+                }}
+                inputProps={{ maxLength: MAX_WRITE_CHARS }}
+              />
+            </Box>
+            {records.length > 1 && (
+              <Typography sx={{ fontSize: TYPO.tiny, color: textMuted, textAlign: 'center' }}>
+                Replaces all {records.length} records on the tag.
+              </Typography>
+            )}
+            <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1.5 }}>
+              <Button
+                size="small"
+                onClick={() => setEditing(false)}
+                sx={{ textTransform: 'none', color: textSecondary }}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={!draft.trim()}
+                onClick={submitWrite}
+                sx={{ textTransform: 'none' }}
+              >
+                Write
+              </Button>
+            </Box>
+          </Box>
+        ) : confirming ? (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
             <Typography sx={{ fontSize: TYPO.sm, color: textSecondary }}>
               {fullErase ? 'Wipe the whole tag memory?' : 'Erase this tag?'}
@@ -224,37 +381,53 @@ export default function NfcReaderCard({
             </Button>
           </Box>
         ) : (
-          <Button
-            size="small"
-            variant="outlined"
-            color="error"
-            disabled={!tag?.present || isErasing}
-            onClick={() => {
-              onClearEraseResult();
-              setConfirming(true);
-            }}
-            startIcon={isErasing ? <CircularProgress size={14} color="inherit" /> : undefined}
-            sx={{ textTransform: 'none', minWidth: 140 }}
-          >
-            {isErasing ? 'Erasing…' : fullErase ? 'Wipe tag' : 'Erase tag'}
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              disabled={!tag?.present || busy}
+              onClick={startEditing}
+              startIcon={isWriting ? <CircularProgress size={14} color="inherit" /> : undefined}
+              sx={{ textTransform: 'none', minWidth: 140 }}
+            >
+              {isWriting ? 'Writing…' : 'Modify content'}
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              color="error"
+              disabled={!tag?.present || busy}
+              onClick={() => {
+                onClearResults();
+                setConfirming(true);
+              }}
+              startIcon={isErasing ? <CircularProgress size={14} color="inherit" /> : undefined}
+              sx={{ textTransform: 'none', minWidth: 140 }}
+            >
+              {isErasing ? 'Erasing…' : fullErase ? 'Wipe tag' : 'Erase tag'}
+            </Button>
+          </Box>
         )}
 
-        {fullErase && !eraseResult && (
+        {fullErase && !result && !editing && (
           <Typography sx={{ fontSize: TYPO.tiny, color: textMuted, textAlign: 'center' }}>
             Not an NDEF tag: the whole memory is wiped, which takes a few seconds.
           </Typography>
         )}
 
-        {eraseResult && (
+        {result && (
           <Typography
             sx={{
               fontSize: TYPO.sm,
-              color: eraseResult.success ? STATUS.success : STATUS.error,
+              color: result.success ? STATUS.success : STATUS.error,
               textAlign: 'center',
             }}
           >
-            {eraseResult.success ? 'Tag erased' : describeEraseError(eraseResult.error)}
+            {result.success
+              ? writeResult
+                ? 'Tag written'
+                : 'Tag erased'
+              : describeTagError(result.error)}
           </Typography>
         )}
       </Box>

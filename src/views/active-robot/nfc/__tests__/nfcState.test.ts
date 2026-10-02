@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { deriveNfcState, describeEraseError, needsFullErase } from '../nfcState';
+import { deriveNfcState, describeTagError, needsFullErase } from '../nfcState';
 import type { NfcStatus, NfcTag } from '../nfcState';
 
 const connected: NfcStatus = { connected: true, chip_detected: true, driver_available: true };
@@ -21,6 +21,20 @@ describe('deriveNfcState', () => {
   it('ignores a stale tag once the reader is gone', () => {
     const tag: NfcTag = { present: true, uid: '04A1B2C3' };
     expect(deriveNfcState({ ...connected, connected: false }, tag)).toBe('unavailable');
+  });
+
+  it('is disabled when switched off, whatever the reader reports', () => {
+    expect(deriveNfcState({ ...connected, enabled: false }, { present: true })).toBe('disabled');
+    expect(
+      deriveNfcState(
+        { connected: false, enabled: false, chip_detected: false, driver_available: true },
+        null
+      )
+    ).toBe('disabled');
+  });
+
+  it('treats a daemon without the switch as switched on', () => {
+    expect(deriveNfcState(connected, null)).toBe('idle');
   });
 
   it('is idle on a connected reader with no tag', () => {
@@ -48,10 +62,10 @@ describe('needsFullErase', () => {
   });
 });
 
-describe('describeEraseError', () => {
+describe('describeTagError', () => {
   it('explains known codes and passes unknown ones through', () => {
-    expect(describeEraseError('LOCKED')).toMatch(/locked/i);
-    expect(describeEraseError('SOMETHING_NEW')).toBe('SOMETHING_NEW');
-    expect(describeEraseError(null)).toBe('Unknown error');
+    expect(describeTagError('LOCKED')).toMatch(/locked/i);
+    expect(describeTagError('SOMETHING_NEW')).toBe('SOMETHING_NEW');
+    expect(describeTagError(null)).toBe('Unknown error');
   });
 });

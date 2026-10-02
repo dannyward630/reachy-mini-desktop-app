@@ -6,6 +6,8 @@
 /** Mirrors the daemon's `NfcStatus` (`GET /api/nfc/status`). */
 export interface NfcStatus {
   connected: boolean;
+  /** Switched on or off from Settings. Absent on daemons without the switch. */
+  enabled?: boolean;
   chip_detected: boolean;
   driver_available: boolean;
   port?: string | null;
@@ -38,45 +40,53 @@ export interface NfcTag {
   last_read_at?: string | null;
 }
 
-export interface NfcEraseResult {
+/** Mirrors the daemon's `NfcWriteResult`, answered by both erase and write. */
+export interface NfcTagResult {
   success: boolean;
   error?: string | null;
 }
 
-/** What the reader is doing, as the status button shows it. */
-export type NfcState = 'unavailable' | 'idle' | 'tag';
+/** What `POST /api/nfc/write` puts on the tag: one text or URI record. */
+export type NfcWriteContent = { text: string } | { uri: string };
 
-/** Stable error codes returned by the daemon's erase endpoint. */
-const ERASE_ERROR_MESSAGES: Record<string, string> = {
+/** What the reader is doing, as the status button shows it. */
+export type NfcState = 'disabled' | 'unavailable' | 'idle' | 'tag';
+
+/** Stable error codes returned by the daemon's erase and write endpoints. */
+const TAG_ERROR_MESSAGES: Record<string, string> = {
   NO_TAG: 'No tag on the reader',
+  TOO_LONG: 'Too long for this tag',
   LOCKED: 'Tag is locked and can no longer be written',
   UNKNOWN_TAG: 'Unrecognised tag model',
   WRITE_REFUSED: 'Tag refused the write',
-  WRITE_ERROR: 'Erase failed partway through',
+  WRITE_ERROR: 'Write failed partway through',
   COLLISION: 'Several tags on the reader, present only one',
   NOT_CONNECTED: 'NFC reader not connected',
   LINK_LOST: 'Lost the link to the NFC reader',
   TIMEOUT: 'Tag was not presented in time',
   DRIVER_MISSING: 'NFC driver not installed on the robot',
+  'NFC reader disabled': 'NFC reader is switched off',
 };
 
 /**
- * Turn an erase error code into a line for the user. Unknown codes are shown
+ * Turn an erase or write error code into a line for the user. Unknown codes are shown
  * as-is: a code we have never seen is more useful than a generic message.
  */
-export function describeEraseError(code: string | null | undefined): string {
+export function describeTagError(code: string | null | undefined): string {
   if (!code) return 'Unknown error';
-  return ERASE_ERROR_MESSAGES[code] ?? code;
+  return TAG_ERROR_MESSAGES[code] ?? code;
 }
 
 /**
- * Collapse the daemon's status and tag into the three states the button shows.
+ * Collapse the daemon's status and tag into the states the button shows.
  *
+ * "disabled" is the user's choice and wins over everything else.
  * Anything short of a connected reader is "unavailable": no answer from the
  * daemon, an older daemon without the NFC routes, the driver missing, or the
  * board unplugged all look the same from the button.
  */
 export function deriveNfcState(status: NfcStatus | null, tag: NfcTag | null): NfcState {
+  if (status?.enabled === false) return 'disabled';
   if (!status?.connected) return 'unavailable';
   return tag?.present ? 'tag' : 'idle';
 }

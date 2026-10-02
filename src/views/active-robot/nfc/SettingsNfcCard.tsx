@@ -20,7 +20,14 @@ export default function SettingsNfcCard({ cardStyle }: SettingsNfcCardProps): Re
       isErasing={reader.isErasing}
       eraseResult={reader.eraseResult}
       onErase={full => void reader.erase(full)}
-      onClearEraseResult={reader.clearEraseResult}
+      isWriting={reader.isWriting}
+      writeResult={reader.writeResult}
+      onWrite={content => void reader.write(content)}
+      onClearResults={reader.clearResults}
+      canToggle={reader.canToggle}
+      isToggling={reader.isToggling}
+      toggleError={reader.toggleError}
+      onToggle={enabled => void reader.setEnabled(enabled)}
       cardStyle={cardStyle}
     />
   );
