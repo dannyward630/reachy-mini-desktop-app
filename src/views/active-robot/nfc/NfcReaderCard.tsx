@@ -11,6 +11,7 @@ import {
   Typography,
 } from '@mui/material';
 import type { SxProps, Theme } from '@mui/material/styles';
+import CheckIcon from '@mui/icons-material/Check';
 import NfcIcon from '@mui/icons-material/Nfc';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import SectionHeader from '../../../components/viewer3d/settings/SectionHeader';
@@ -336,6 +337,17 @@ export default function NfcReaderCard({
                 )}
               </Box>
             </Box>
+
+            {/* Pushed to the bottom of the box: a quiet acknowledgement, the
+                content above already shows what changed. */}
+            {result?.success && (
+              <Box sx={{ mt: 'auto', display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                <CheckIcon sx={{ fontSize: TYPO.sm, color: textMuted }} />
+                <Typography sx={{ fontSize: TYPO.xs, color: textMuted }}>
+                  {writeResult ? 'Tag written' : 'Tag erased'}
+                </Typography>
+              </Box>
+            )}
           </>
         )}
       </Box>
@@ -469,19 +481,9 @@ export default function NfcReaderCard({
           </Typography>
         )}
 
-        {result && (
-          <Typography
-            sx={{
-              fontSize: TYPO.sm,
-              color: result.success ? STATUS.success : STATUS.error,
-              textAlign: 'center',
-            }}
-          >
-            {result.success
-              ? writeResult
-                ? 'Tag written'
-                : 'Tag erased'
-              : describeTagError(result.error)}
+        {result && !result.success && (
+          <Typography sx={{ fontSize: TYPO.sm, color: STATUS.error, textAlign: 'center' }}>
+            {describeTagError(result.error)}
           </Typography>
         )}
       </Box>
