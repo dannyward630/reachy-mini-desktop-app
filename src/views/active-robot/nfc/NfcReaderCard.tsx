@@ -69,6 +69,7 @@ function readerTitle(status: NfcStatus | null): string {
 function readerDetail(status: NfcStatus | null, fetchError: string | null): string | null {
   if (!status) return fetchError ?? 'Waiting for the daemon…';
   if (status.enabled === false) return 'Turn it on to read tags';
+  if (status.connected && status.board_version) return `Board version ${status.board_version}`;
   return null;
 }
 

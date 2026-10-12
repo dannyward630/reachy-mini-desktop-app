@@ -11,6 +11,8 @@ export interface NfcStatus {
   chip_detected: boolean;
   driver_available: boolean;
   port?: string | null;
+  /** From the board's USB product string ("Winnie NFC 1.2"). Absent on older daemons. */
+  board_version?: string | null;
   chip_version?: string | null;
   error?: string | null;
   last_seen_at?: string | null;
